@@ -1,68 +1,183 @@
+import socket
+import threading
+import sys
 
-def peer_index():
-    return (None,None)
+#
+# "BitTorrent trackers provide a list of files available for 
+# transfer and allow the client to find peer users, 
+# known as "seeds", who may transfer the files."
+#
+# To use you need two terminal Windows:
+#   1. python p2p_command.py --tracker
+#   2. python p2p_command.py
+#
 
 
-def peer_discovery():
-    # Dictionary of peer_name as key and set of peer_id and index as value
-    # value will be provided by peer_index() need to figure out method of getting index
-    return {}
+# -----------------------------
+# Tracker logic
+# -----------------------------
+
+
+PEERS = set()  # This set stores all peer addresses as strings like "ip:port"
+
+
+def start_tracker(host='0.0.0.0', port=9000):
+    """
+    Starts the tracker server that listens for incoming peer registrations.
+    It adds peers to a global set and returns the list of known peers (excluding the caller).
+    """
+    def handle_client(conn, addr):
+        """
+        Handles an individual connection from a peer.
+        Expects a message in the format "REGISTER:<ip>:<port>"
+        Responds with a '|' separated list of all other peers.
+        """
+        data = conn.recv(1024).decode()
+        if data.startswith("REGISTER:"):
+            peer_info = data.split("REGISTER:")[1]
+            PEERS.add(peer_info)
+            print(f"[Tracker] Registered peer: {peer_info}")
+            peer_list = "|".join(p for p in PEERS if p != peer_info)
+            conn.send(peer_list.encode())
+        conn.close()
+
+    # Set up TCP server socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((host, port))
+    s.listen(5)
+    print(f"[Tracker] Running on {host}:{port}")
+    print("[Tracker] Waiting for peers to connect...")
+
+    # Accept connections forever (each handled in a separate thread)
+    while True:
+        conn, addr = s.accept()
+        threading.Thread(target=handle_client, args=(conn, addr)).start()
+
+
+# -----------------------------
+# Peer logic
+# -----------------------------
+
+
+def register_with_tracker(tracker_host, tracker_port, peer_host, peer_port):
+    """
+    Connects to the tracker and registers the current peer.
+    Returns a list of other peers in the network.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.connect((tracker_host, tracker_port))
+        peer_info = f"{peer_host}:{peer_port}"
+        s.send(f"REGISTER:{peer_info}".encode())
+        data = s.recv(1024).decode()
+        peer_list = data.split('|') if data else []
+        return peer_list
+    except Exception as e:
+        print(f"[Error] Could not connect to tracker: {e}")
+        return []
+    finally:
+        s.close()
+
+
+def peer_discovery(my_port):
+    """
+    Uses the tracker to discover other peers in the network.
+    Returns a dictionary mapping 'peer_id' to (ip, port).
+    """
+    my_host = socket.gethostbyname(socket.gethostname())
+    tracker_host, tracker_port = '127.0.0.1', 9000
+
+    peer_list = register_with_tracker(tracker_host, tracker_port, my_host, my_port)
+    
+    # Create dictionary: {'127.0.0.1:10001': ('127.0.0.1', 10001)}
+    return {p: (p.split(':')[0], int(p.split(':')[1])) for p in peer_list if ':' in p}
+
 
 def print_menu():
-    print('i -peer_name: Display data available from peer')
-    print('c -peer_name -id: Connect to peer and request exchange for data with id')
-    print('r : Refresh peer discovery')
-    print('q : Quit')
-    return
+    """
+    Prints the command menu for the user.
+    """
+    print('\nAvailable commands:')
+    print('i -peer_name          : Display data available from peer')
+    print('c -peer_name -id      : Connect to peer and request file with id')
+    print('r                     : Refresh peer discovery')
+    print('q                     : Quit')
+
 
 def print_index(index):
-    # May need to modify based on index structure
-    print(index)
-    return
-
-def exchange_data(peers, peer, id):
-    # Get (peer_id, peer_index) when given peer as key to peers
-    # check if id is valid in the peer_index prior to contact
-    # else print id is not valid
-    # set up a thread with method and parameters
-    # to contact and exchange with peer using index id
-    return
+    """
+    Stub function to display peer index (shared files).
+    Will be expanded once file indexing is added.
+    """
+    print("[Index] Peer file index:", index)
 
 
-def p2p_command_line(name):
-    print('Initiating P2P File Sharing System')
-    print('Hello ', name)
-    peers = peer_discovery()
+def exchange_data(peers, peer_name, file_id):
+    """
+    Stub function to exchange data with a peer.
+    This is where the file transfer mechanism will go.
+    """
+    if peer_name not in peers:
+        print(f"[Exchange] Peer '{peer_name}' not found.")
+        return
+
+    print(f"[Exchange] Attempting to download file ID {file_id} from {peer_name}...")
+    # In the full version, connect to the peer and request the file by ID
+    # Using a separate thread for download is ideal
+
+
+def p2p_command_line(name, port):
+    """
+    Main interface for the P2P system.
+    Handles user input and executes commands.
+    """
+    print('--- P2P File Sharing System ---')
+    print(f'Hello, {name} (listening on port {port})')
+
+    peers = peer_discovery(port)
+
     while True:
-        print('Peers in the network:')
+        print('\nCurrent Peers:')
         for peer in peers.keys():
-            print(peer)
+            print(f" - {peer}")
         print_menu()
-        ans = input('Choose: ')
-        ans = ans.split(' ')
-        command = ans[0]
-        if command == 'i':
-            peer = ans[1]
-            #index = peers[peer][1]
-            print_index(None)
-        elif command == 'c':
-            peer = ans[1]
-            id = ans[2]
-            exchange_data(peers, peer, id)
-        elif command == 'r':
-            peers = peer_discovery()
+
+        # User input
+        ans = input('\nChoose: ').strip().split(' ')
+        if not ans:
             continue
+
+        command = ans[0]
+
+        if command == 'i' and len(ans) == 2:
+            peer = ans[1]
+            print_index(None)  # Replace with real index data later
+        elif command == 'c' and len(ans) == 3:
+            peer, file_id = ans[1], ans[2]
+            exchange_data(peers, peer, file_id)
+        elif command == 'r':
+            peers = peer_discovery(port)
         elif command == 'q':
-            print('Leaving system. Bye')
+            print('Leaving system. Goodbye!')
             break
         else:
-            print('Command was not valid, please try again')
+            print('[Error] Invalid command. Please try again.')
 
-
-def main():
-    p2p_command_line('Tempest')
+# -----------------------------
+# Entry point
+# -----------------------------
 
 if __name__ == "__main__":
-    main()
-
-
+    """
+    Launches the program.
+    If run with '--tracker', acts as the tracker.
+    Otherwise, launches the peer command-line interface.
+    """
+    if '--tracker' in sys.argv:
+        # Run as tracker
+        start_tracker()
+    else:
+        # Run as peer
+        port = 10000  # You can prompt or randomize this per instance if needed
+        name = "Tempest"  # Can be input() or fixed for now
+        p2p_command_line(name, port)
