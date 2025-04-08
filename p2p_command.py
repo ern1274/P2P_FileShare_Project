@@ -24,6 +24,13 @@ from P2P_File_Share_Proj.sender_rdt import Sender
 
 PEERS = set()  # This set stores all peer addresses as strings like "ip:port"
 
+# Local index: file_id -> filepath
+peer_files = {
+    "001": "shared/file1.txt",
+    "002": "shared/file2.txt",
+    "003": "shared/file3.txt"
+}
+
 
 def start_tracker(host='0.0.0.0', port=9000):
     """
@@ -98,13 +105,14 @@ def peer_discovery(my_port):
 
 def get_index_path(exch_peer, exch_id):
     """
-    Get the path to the requested file provided by the index parameter
-    from provided exch_peer
-    :param exch_peer:
-    :param exch_id:
-    :return:
+    Given a peer and a file ID, return the path to the file.
+    For now, only local lookups are supported.
+    
+    :param exch_peer: the peer requesting the file (not used currently)
+    :param exch_id: the file ID being requested
+    :return: the file path as a string, or empty string if not found
     """
-    return ''
+    return peer_files.get(exch_id, "")
 
 
 def print_menu():
@@ -118,12 +126,13 @@ def print_menu():
     print('q                     : Quit')
 
 
-def print_index(index):
+def print_index(index=None):
     """
-    Stub function to display peer index (shared files).
-    Will be expanded once file indexing is added.
+    Displays the list of available files from this peer.
     """
-    print("[Index] Peer file index:", index)
+    print("\n[Local File Index]")
+    for file_id, path in peer_files.items():
+        print(f"ID: {file_id} -> Path: {path}")
 
 
 def exchange_data(peers, peer_name, file_id, receiver, address):
