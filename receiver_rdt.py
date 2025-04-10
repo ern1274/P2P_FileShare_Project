@@ -1,4 +1,4 @@
-import queue
+
 import threading
 import zlib
 
@@ -84,8 +84,7 @@ class Receiver:
     base_seq = -1
     max_seq = -1
 
-    exch_req_queue = queue.SimpleQueue()
-    exch_data_queue = queue.SimpleQueue()
+
     timeout = None
 
     def __init__(self, soc):
@@ -144,74 +143,70 @@ class Receiver:
         self.packets.clear()
         return
 
-    def exch_status(self):
-        return self.exch_req_queue.empty()
-
-    def get_requests(self):
-        reqs = []
-        while not self.exch_req_queue.empty():
-            reqs.append(self.exch_req_queue.get())
-        return reqs
-
 
     def set_timeout(self):
         self.timeout = 1
+        print("Timeout was changed")
 
 
-    def execute_request(self, peer_addr, peer_msg, file_name):
+    def execute_request(self, peer_addr, peer_msg, file_name,exch_data_queue):
         payload = peer_msg.encode()
         chksum = make_checksum(payload)
         self.soc.sendto(chksum + payload, peer_addr)
-        self.run_receiver()
+        self.run_receiver(exch_data_queue)
         print(self.packets)
         # add save to file
 
 
-    def listen_for_requests(self):
+    def listen_for_requests(self,exch_req_queue,exch_data_queue):
         """Waits for request from other peers from self.soc, verifies data and verifies requests
         Runs as long as the p2p_command is running
         """
         try:
             while True:
-                print('Listening')
-                #self.soc.settimeout(self.timeout)
+                #print('Listening')
                 data, address = self.soc.recvfrom(4096)
                 chksum = data[:8]
                 data = data[8:]
                 if verify_integrity(chksum, data):
-                    data = data.decode()
-                    if data.startswith("EXCH_REQ"):
-                        string =  data.split(":")[1]
+                    exch = data.decode(errors='ignore')
+                    if exch.startswith("EXCH_REQ"):
+                        string =  exch.split(":")[1]
                         file_id, peer_addr = string.split(",")[0], string.split(",")[1]
-                        self.exch_req_queue.put((file_id, peer_addr))
-                        print("inserted EXCH_REQ with file id: ", str(file_id), " into queue")
+                        print("inserting EXCH_REQ with file id: ", str(file_id), " into queue")
+                        exch_req_queue.put((file_id, peer_addr))
                     else:
-                        self.exch_data_queue.put((data, address))
-                        print("inserted data into queue")
+                        send_seq, msg = convert_sender_payload(data)
+                        print("inserting data into queue")
+                        exch_data_queue.put((data, address))
+                        self.soc.sendto(make_packet(send_seq, "ACK"), address)
                 else:
                     print("Corrupted packet, discarding")
-        except:
-            print("Getting no more messages, exiting receiver")
+        except Exception as e:
+            print(e)
+            print("Getting no more messages, exiting listener")
 
-    def run_receiver(self):
+    def run_receiver(self, exch_data_queue):
         """Waits for data from self.soc, verifies data and populates data in
         self.packets using class methods.
         Exits 15 seconds of no activity
         after sender/client sends a sequence number of -1 is sent
 
         """
+
         try:
             while True:
-                data, address = self.exch_data_queue.get(timeout=35)
+                data, address = exch_data_queue.get(timeout=35)
                 send_seq, msg = convert_sender_payload(data)
                 print("Server Received seq: " + str(send_seq))
                 #print("The message is: " + msg)
                 if send_seq == -1:
                     print("Client is done, sending ack")
-                    self.soc.sendto(make_packet(send_seq, "ACK"), address)
-                    print(self.get_packets())
-                    self.soc.settimeout(15)
-                    continue
+                    # sending ACK here might be redundant due to listener function acking for us
+                    # This function shouldn't end abruptly in event of failed ack
+                    # socket timeout avoided this but socket is not used here anymore
+                    # Might need to set up an actual timer
+                    return
 
                 if self.base_seq == -1:
                     #print("Server Establishing base and max seq as " + str(send_seq))
@@ -228,7 +223,8 @@ class Receiver:
                 elif send_seq < self.max_seq and self.packets[send_seq - self.base_seq] is None:
                     self.add_packet(send_seq, msg, False)
 
-                self.soc.sendto(make_packet(send_seq, "ACK"), address)
+                # sending ACK here might be redundant due to listener function acking for us
+                #self.soc.sendto(make_packet(send_seq, "ACK"), address)
         except:
             print("Getting no more messages, exiting receiver")
         return

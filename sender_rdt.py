@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 import zlib
@@ -152,7 +153,9 @@ class Sender:
         return pkts
 
     def setup_exchange(self, exch_path):
+        print("Exchanging: " + exch_path)
         self.arrange_pkts(self.make_packets(exch_path, 24))
+        # Add process to run sender to distinguish request number
         self.run_sender()
 
 
@@ -166,7 +169,7 @@ class Sender:
         while recv_base is not None:
             for i in range(recv_base, win_end+1):
                 if not (self.packets[i][2].finished.is_set() or self.packets[i][2].is_alive()):
-                    print("Transmitting " + str(self.base_seq + i))
+                    #print("Transmitting " + str(self.base_seq + i))
                     payload = self.packets[i][0]
                     self.soc.sendto(payload, (self.ip, self.port))
                     self.packets[i][2].start()

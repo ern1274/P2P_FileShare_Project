@@ -1,10 +1,14 @@
+import os.path
 import socket
 import threading
 import sys
-from multiprocessing import Process
+import queue
+from threading import Thread
 
 from P2P_File_Share_Proj.receiver_rdt import Receiver
-from P2P_File_Share_Proj.sender_rdt import Sender
+from P2P_File_Share_Proj.sender_rdt import Sender, make_checksum
+import time
+
 
 #
 # "BitTorrent trackers provide a list of files available for 
@@ -30,6 +34,7 @@ peer_files = {
     "002": "shared/file2.txt",
     "003": "shared/file3.txt"
 }
+
 
 
 def start_tracker(host='0.0.0.0', port=9000):
@@ -112,7 +117,11 @@ def get_index_path(exch_peer, exch_id):
     :param exch_id: the file ID being requested
     :return: the file path as a string, or empty string if not found
     """
-    return peer_files.get(exch_id, "")
+
+    path = os.path.abspath(__file__)
+    file_path = peer_files.get(exch_id, "")
+    path = path.replace('p2p_command.py',file_path)
+    return path
 
 
 def print_menu():
@@ -135,23 +144,31 @@ def print_index(index=None):
         print(f"ID: {file_id} -> Path: {path}")
 
 
-def exchange_data(peers, peer_name, file_id, receiver, address):
+def exchange_data(peers, peer_name, file_id, receiver, address,exch_data_queue):
     """
     Stub function to exchange data with a peer.
     This is where the file transfer mechanism will go.
     """
-    if peer_name not in peers:
-        print(f"[Exchange] Peer '{peer_name}' not found.")
-        return
+    # Temporarily commented out until tracker is working
+    #if peer_name not in peers:
+    #    print(f"[Exchange] Peer '{peer_name}' not found.")
+    #    return
 
     print(f"[Exchange] Attempting to download file ID {file_id} from {peer_name}...")
-    #
-    peer_addr = peers[peer_name]
+    # Peer_addr will be peer_name. Peer name needs to be a tuple of ip, port
+    #peer_addr = peers[peer_name]
+    peer_addr = peer_name
     peer_msg = "EXCH_REQ:" + str(file_id)+","+str(address)
     file_name = str(file_id) + "_torrent"
-    exchange_req = Process(target=receiver.execute_request, args=[peer_addr,peer_msg,file_name])
+    exchange_req = Thread(target=receiver.execute_request, args=[peer_addr,peer_msg,file_name,exch_data_queue])
     exchange_req.start()
 
+
+def sender_loop(addr, port,receiver, exch_data_queue):
+    for key in peer_files.keys():
+        print("Key: " + key)
+        exchange_data([],(addr, port),key,receiver,str((addr, port)), exch_data_queue)
+        time.sleep(60)
 
 
 def p2p_command_line(name, port):
@@ -159,12 +176,16 @@ def p2p_command_line(name, port):
     Main interface for the P2P system.
     Handles user input and executes commands.
     """
-
+    address = socket.gethostbyname(socket.gethostname())
     soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    soc.bind((socket.gethostname(), port))
+    soc.bind((address, port))
+    exch_req_queue = queue.SimpleQueue()
+    exch_data_queue = queue.SimpleQueue()
     receiver = Receiver(soc)
-    listener = Process(target=receiver.listen_for_requests)
+    listener = Thread(target=receiver.listen_for_requests, args=[exch_req_queue,exch_data_queue])
     listener.start()
+    looper = Thread(target=sender_loop, args=[address,port, receiver, exch_data_queue])
+    looper.start()
 
     print('--- P2P File Sharing System ---')
     print(f'Hello, {name} (listening on port {port})')
@@ -172,15 +193,22 @@ def p2p_command_line(name, port):
     peers = peer_discovery(port)
 
     while True:
-        if not receiver.exch_status():
-            request_queue = receiver.get_requests()
-            for exch_id, exch_peer in request_queue:
-                exch_addr = peers[exch_peer]
+        #print("P2P EXCH status: " + str(exch_req_queue.empty()))
+        if not exch_req_queue.empty():
+            print("Fulfilling Exchange Request")
+            while not exch_req_queue.empty():
+                entry = exch_req_queue.get()
+                exch_id, exch_peer = entry[0], entry[1]
+                #exch_addr = peers[exch_peer]
                 exch_path = get_index_path(exch_peer,exch_id)
                 soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sender = Sender(soc, exch_addr[0], exch_addr[1])
-                sender.setup_exchange(exch_path)
+                sender = Sender(soc, address, port)
+                sender_thread = Thread(target=sender.setup_exchange, args=[exch_path])
+                sender_thread.start()
         else:
+            #time.sleep(2)
+            #continue
+            # uncomment the two above lines to monitor the listener, request and p2p sender threads
             print('\nCurrent Peers:')
             for peer in peers.keys():
                 print(f" - {peer}")
@@ -198,11 +226,12 @@ def p2p_command_line(name, port):
                 print_index(None)  # Replace with real index data later
             elif command == 'c' and len(ans) == 3:
                 peer, file_id = ans[1], ans[2]
-                exchange_data(peers, peer, file_id, receiver, socket.gethostname())
+                exchange_data(peers, peer, file_id, receiver, address,exch_data_queue)
             elif command == 'r':
                 peers = peer_discovery(port)
             elif command == 'q':
                 print('Leaving system. Goodbye!')
+                receiver.set_timeout()
                 break
             else:
                 print('[Error] Invalid command. Please try again.')
