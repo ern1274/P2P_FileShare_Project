@@ -144,7 +144,7 @@ def print_index(index=None):
         print(f"ID: {file_id} -> Path: {path}")
 
 
-def exchange_data(peers, peer_name, file_id, receiver, address,exch_data_queue):
+def exchange_data(peers, peer_name, file_id, soc, address,exch_data_queue):
     """
     Stub function to exchange data with a peer.
     This is where the file transfer mechanism will go.
@@ -158,17 +158,16 @@ def exchange_data(peers, peer_name, file_id, receiver, address,exch_data_queue):
     # Peer_addr will be peer_name. Peer name needs to be a tuple of ip, port
     #peer_addr = peers[peer_name]
     peer_addr = peer_name
-    peer_msg = "EXCH_REQ:" + str(file_id)+","+str(address)
-    file_name = str(file_id) + "_torrent"
-    exchange_req = Thread(target=receiver.execute_request, args=[peer_addr,peer_msg,file_name,exch_data_queue])
+    peer_msg = "EXCH_REQ:" + str(file_id)+"."+str(address)
+    sep_receiver = Receiver(soc)
+    exchange_req = Thread(target=sep_receiver.execute_request, args=[peer_addr,peer_msg,file_id,exch_data_queue])
     exchange_req.start()
 
 
-def sender_loop(addr, port,receiver, exch_data_queue):
+def sender_loop(addr, port,exch_data_queue, soc):
     for key in peer_files.keys():
-        print("Key: " + key)
-        exchange_data([],(addr, port),key,receiver,str((addr, port)), exch_data_queue)
-        time.sleep(60)
+        exchange_data([],(addr, port),key,soc,str((addr, port)), exch_data_queue)
+        #time.sleep(60)
 
 
 def p2p_command_line(name, port):
@@ -182,10 +181,12 @@ def p2p_command_line(name, port):
     exch_req_queue = queue.SimpleQueue()
     exch_data_queue = queue.SimpleQueue()
     receiver = Receiver(soc)
+
     listener = Thread(target=receiver.listen_for_requests, args=[exch_req_queue,exch_data_queue])
     listener.start()
-    looper = Thread(target=sender_loop, args=[address,port, receiver, exch_data_queue])
-    looper.start()
+    #looper = Thread(target=sender_loop, args=[address,port, exch_data_queue, soc])
+    #looper.start()
+    # uncomment above two lines to imitate exchange requests for file ids: 001, 002, 003
 
     print('--- P2P File Sharing System ---')
     print(f'Hello, {name} (listening on port {port})')
@@ -201,8 +202,8 @@ def p2p_command_line(name, port):
                 exch_id, exch_peer = entry[0], entry[1]
                 #exch_addr = peers[exch_peer]
                 exch_path = get_index_path(exch_peer,exch_id)
-                soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sender = Sender(soc, address, port)
+                send_soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sender = Sender(send_soc, address, port, exch_id)
                 sender_thread = Thread(target=sender.setup_exchange, args=[exch_path])
                 sender_thread.start()
         else:

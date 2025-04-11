@@ -1,5 +1,6 @@
 
 import threading
+import time
 import zlib
 
 def make_checksum(data):
@@ -37,9 +38,11 @@ def convert_sender_payload(data):
     :return: msg, data from packet
     :rtype: String
     """
-    send_seq = int.from_bytes(data[:4], byteorder='big', signed=True)
-    msg = data[4:].decode()
-    return send_seq, msg
+    id_length = int.from_bytes(data[:4], byteorder='big', signed=True)
+    file_id = data[4:4+id_length].decode()
+    send_seq = int.from_bytes(data[4+id_length:8+id_length], byteorder='big', signed=True)
+    msg = data[8+id_length:].decode()
+    return file_id, send_seq, msg
 
 def verify_integrity(sent_chksum, data):
     """Verifies checksum from received packet
@@ -149,12 +152,13 @@ class Receiver:
         print("Timeout was changed")
 
 
-    def execute_request(self, peer_addr, peer_msg, file_name,exch_data_queue):
+    def execute_request(self, peer_addr, peer_msg, file_id,exch_data_queue):
         payload = peer_msg.encode()
         chksum = make_checksum(payload)
         self.soc.sendto(chksum + payload, peer_addr)
-        self.run_receiver(exch_data_queue)
+        self.run_receiver(exch_data_queue, file_id)
         print(self.packets)
+        file_name = str(file_id) + "_torrent"
         # add save to file
 
 
@@ -172,11 +176,11 @@ class Receiver:
                     exch = data.decode(errors='ignore')
                     if exch.startswith("EXCH_REQ"):
                         string =  exch.split(":")[1]
-                        file_id, peer_addr = string.split(",")[0], string.split(",")[1]
+                        file_id, peer_addr = string.split(".")[0], string.split(".")[1]
                         print("inserting EXCH_REQ with file id: ", str(file_id), " into queue")
                         exch_req_queue.put((file_id, peer_addr))
                     else:
-                        send_seq, msg = convert_sender_payload(data)
+                        file_id, send_seq, msg = convert_sender_payload(data)
                         print("inserting data into queue")
                         exch_data_queue.put((data, address))
                         self.soc.sendto(make_packet(send_seq, "ACK"), address)
@@ -186,7 +190,7 @@ class Receiver:
             print(e)
             print("Getting no more messages, exiting listener")
 
-    def run_receiver(self, exch_data_queue):
+    def run_receiver(self, exch_data_queue, file_id):
         """Waits for data from self.soc, verifies data and populates data in
         self.packets using class methods.
         Exits 15 seconds of no activity
@@ -197,15 +201,18 @@ class Receiver:
         try:
             while True:
                 data, address = exch_data_queue.get(timeout=35)
-                send_seq, msg = convert_sender_payload(data)
-                print("Server Received seq: " + str(send_seq))
+                send_id, send_seq, msg = convert_sender_payload(data)
+                #print("Server Received seq: " + str(send_seq))
+                #print("File id is " + send_id)
                 #print("The message is: " + msg)
+
+                if not file_id == send_id:
+                    exch_data_queue.put((data, address))
+                    time.sleep(1)
+                    continue
+
                 if send_seq == -1:
                     print("Client is done, sending ack")
-                    # sending ACK here might be redundant due to listener function acking for us
-                    # This function shouldn't end abruptly in event of failed ack
-                    # socket timeout avoided this but socket is not used here anymore
-                    # Might need to set up an actual timer
                     return
 
                 if self.base_seq == -1:
@@ -223,8 +230,6 @@ class Receiver:
                 elif send_seq < self.max_seq and self.packets[send_seq - self.base_seq] is None:
                     self.add_packet(send_seq, msg, False)
 
-                # sending ACK here might be redundant due to listener function acking for us
-                #self.soc.sendto(make_packet(send_seq, "ACK"), address)
         except:
             print("Getting no more messages, exiting receiver")
         return

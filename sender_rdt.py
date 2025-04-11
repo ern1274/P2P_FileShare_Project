@@ -15,7 +15,7 @@ def make_checksum(data):
     """
     return zlib.crc32(data).to_bytes(8,'big',signed=True)
 
-def make_sender_payload(seq_num, msg):
+def make_sender_payload(seq_num, msg, file_id):
     """Forms packet payload by encoding sequence number and message of packet
 
     :param seq_num: int to convert to bytes
@@ -25,9 +25,12 @@ def make_sender_payload(seq_num, msg):
     :return: payload, sequence of bytes containing seq_num and msg
     :rtype: Bytes
     """
+
+    id_bytes = file_id.encode()
+    id_length = len(id_bytes).to_bytes(4, byteorder='big')
     seq_bytes = seq_num.to_bytes(4, byteorder='big', signed=True)
     msg_bytes = msg.encode()
-    payload = seq_bytes + msg_bytes
+    payload = id_length + id_bytes + seq_bytes + msg_bytes
     return payload
 
 def convert_receiver_payload(data):
@@ -57,7 +60,7 @@ def verify_integrity(sent_chksum, data):
     chksum = make_checksum(data)
     return sent_chksum == chksum
 
-def make_packet(seq_num, msg):
+def make_packet(seq_num, msg, file_id):
     """Forms packet by combining calculated checksum and formed payload
 
     :param seq_num: int to convert to bytes
@@ -67,7 +70,7 @@ def make_packet(seq_num, msg):
     :return: payload, sequence of bytes containing seq_num and msg
     :rtype: Bytes
     """
-    payload = make_sender_payload(seq_num, msg)
+    payload = make_sender_payload(seq_num, msg, file_id)
     chksum = make_checksum(payload)
     return chksum+payload
 
@@ -84,11 +87,12 @@ class Sender:
         base_seq: the lowest sequence number to index by
     """
     packets = None
-    def __init__(self, soc, ip, port):
+    def __init__(self, soc, ip, port, file_id):
         self.soc = soc
         self.ip = ip
         self.port = port
         self.base_seq = 1
+        self.file_id = file_id
 
     def send_pkt(self, seq_num):
         """Retransmits packet after timeout by thread.Timer and resets timeout
@@ -112,7 +116,7 @@ class Sender:
         seq_num = self.base_seq
         for pkt in data:
             #print(pkt)
-            packet = make_packet(seq_num, pkt)
+            packet = make_packet(seq_num, pkt, self.file_id)
             self.packets.append([packet, False,
                                  threading.Timer(5.0, self.send_pkt, [seq_num])])
             seq_num += 1
@@ -194,7 +198,7 @@ class Sender:
                 continue
 
         while True:
-            payload = make_packet(-1,'FIN')
+            payload = make_packet(-1,'FIN', self.file_id)
             self.soc.sendto(payload, (self.ip, self.port))
             self.soc.settimeout(10)
             try:
