@@ -1,10 +1,12 @@
-
 import threading
 import time
 import zlib
+from sender_rdt import make_packet as make_data_packet
+
 
 def make_checksum(data):
-    """Forms checksum from data using crc32 function from zlib library
+    """
+    Forms checksum from data using crc32 function from zlib library
 
     :param data: sequence of Bytes to calculate checksum
     :type data: Bytes
@@ -14,7 +16,8 @@ def make_checksum(data):
     return zlib.crc32(data).to_bytes(8,'big',signed=True)
 
 def make_receiver_payload(seq_num, msg):
-    """Forms packet payload by encoding sequence number and message of packet
+    """
+    Forms packet payload by encoding sequence number and message of packet
 
     :param seq_num: int to convert to bytes
     :type seq_num: int
@@ -29,7 +32,8 @@ def make_receiver_payload(seq_num, msg):
     return payload
 
 def convert_sender_payload(data):
-    """Decodes packet payload to retrieve sequence number and message of packet
+    """
+    Decodes packet payload to retrieve sequence number and message of packet
 
     :param data: sequence of Bytes to decode
     :type data: Bytes
@@ -45,7 +49,8 @@ def convert_sender_payload(data):
     return file_id, send_seq, msg
 
 def verify_integrity(sent_chksum, data):
-    """Verifies checksum from received packet
+    """
+    Verifies checksum from received packet
 
     :param sent_chksum: received checksum with length of 8 bytes
     :type sent_chksum: Bytes
@@ -58,21 +63,36 @@ def verify_integrity(sent_chksum, data):
     return sent_chksum == chksum
 
 def make_packet(seq_num, msg):
-    """Forms packet by combining calculated checksum and formed payload
+    """
+    Forms packet by combining calculated checksum and formed payload
 
     :param seq_num: int to convert to bytes
     :type seq_num: int
     :param msg: characters to encode
     :type msg: String
     :return: payload, sequence of bytes containing seq_num and msg
-    :rtype: Bytes
+    :return type: Bytes
     """
     payload = make_receiver_payload(seq_num, msg)
     chksum = make_checksum(payload)
-    return chksum+payload
+    return chksum + payload
 
 class Receiver:
-    """Receiver, a class with defined behavior to receive data from a sender
+    """
+    Receiver class that can handle multiple files simultaneously.
+
+    For each inbound file, we store its 'base_seq', 'max_seq', and 'packets'
+    inside self.active_files[file_id], for example:
+
+        self.active_files[file_id] = {
+            'base_seq': -1,
+            'max_seq':  -1,
+            'packets':  []
+        }
+
+    When a new chunk arrives for 'file_id', we place it at index [seq - base_seq].
+    Once we see seq == -1, we know the sender is done sending that file, and we
+    call finalize_file(file_id) to write out the chunks and remove the entry.
 
     Attributes:
         packets: Array of received decoded data
@@ -90,148 +110,205 @@ class Receiver:
 
     timeout = None
 
-    def __init__(self, soc):
+    def __init__(self, soc, peer_files=None):
+        """
+        :param soc: the UDP socket that this receiver will use for inbound data
+        :param peer_files: an optional dictionary of local files (file_id -> path)
+        """
         self.soc = soc
+        self.peer_files = peer_files if peer_files else {}
 
-    # Rebase and add pkt function will change base_seq and max_seq
-    def add_packet(self, seq_num,data, expand_pkts):
-        """Given seq_num, data add data to Receiver packets,
-        if expand_pkts is True, seq_num is bigger than self.max_seq.
-        In this event, add entries until seq_num is reached and input data
+        # Multi-file storage: file_id -> { base_seq, max_seq, packets[] }
+        self.active_files = {}
 
-        :param seq_num: sequence number of data packet
-        :type seq_num: int
-        :param data: decoded data
-        :type data: String
-        :param expand_pkts: true if seq_num >= self.max_seq
-        :type expand_pkts: Boolean
+        self.timeout = None
+
+    # Rebase and add packet functions will change base_seq and max_seq
+    def add_packet(self, file_id, seq_num, data_str, expand_pkts):
         """
+        Given file_id, seq_num, data_str, place the data into the correct spot
+        in 'info["packets"]'. If expand_pkts is True, we enlarge 'info["packets"]'
+        up to seq_num.
+
+        :param file_id: the identifier of the inbound file
+        :type file_id: String
+        :param seq_num: sequence number of this chunk
+        :type seq_num: int
+        :param data_str: the chunk contents
+        :type data_str: String
+        :param expand_pkts: True if seq_num >= info['max_seq'], meaning we may need
+                            to extend the packets array
+        :type expand_pkts: bool
+        """
+        info = self.active_files[file_id]
+
         if expand_pkts:
-            until_seq = seq_num - self.max_seq
-            for i in range(until_seq):
-                self.packets.append(None)
-            self.max_seq = seq_num
-        self.packets[seq_num - self.base_seq] = data
-        return
+            needed = seq_num - info['max_seq']
+            # If needed == 0, it means seq_num is exactly info['max_seq'],
+            # we still need to create one new slot for that chunk. So you may do:
+            # needed = (seq_num - info['max_seq']) + 1
+            # if you want the new chunk to expand properly. 
+            # But let's keep it as is if you have consistent indexing.
+            for _ in range(needed):
+                info['packets'].append(None)
+            info['max_seq'] = seq_num
 
-    def rebase_packets(self, seq_num, data):
-        """Given seq_num, data add data to Receiver packets,
-        this function is called if seq_num is smaller than self.base_seq
-        where self.packets is modified to make seq_num the new self.base_seq
-        and populate decoded data in self.packets
+        idx = seq_num - info['base_seq']
+        info['packets'][idx] = data_str
 
-        :param seq_num: sequence number of data packet
+    def rebase_packets(self, file_id, seq_num, data_str):
+        """
+        Given file_id and a chunk's sequence number is smaller than base_seq,
+        rebase so that 'seq_num' becomes the new base_seq and put 'data_str'
+        at index 0.
+
+        :param file_id: the identifier of the inbound file
+        :type file_id: String
+        :param seq_num: the inbound packet's sequence number
         :type seq_num: int
-        :param data: decoded data
-        :type data: String
+        :param data_str: the actual file data chunk
+        :type data_str: String
         """
-        until_base = self.base_seq - seq_num
-        for i in range(until_base):
-            self.packets.insert(0, None)
-        self.base_seq = seq_num
-        self.packets[self.base_seq - self.base_seq] = data
-        return
+        info = self.active_files[file_id]
+        old_base = info['base_seq']
+        shift_count = old_base - seq_num
 
-    def get_packets(self):
-        """Retrieves Receiver object packets
+        # Insert shift_count new 'None' at the front
+        for _ in range(shift_count):
+            info['packets'].insert(0, None)
 
-        :return: self.packets
+        info['base_seq'] = seq_num
+        # Now index 0 matches this chunk
+        info['packets'][0] = data_str
+        
+    def finalize_file(self, file_id):
         """
-        return self.packets
+        Writes out the collected packets for 'file_id' to <file_id>_torrent.txt,
+        then clears them from self.active_files.
 
-    def clear_packets(self):
-        """Clears Receiver object packets to emptiness
-
+        :param file_id: the unique identifier for the file being transferred
+        :type file_id: String
         """
-        self.packets.clear()
-        return
+        if file_id not in self.active_files:
+            print(f"[Receiver] finalize_file called, but no record found for {file_id}.")
+            return
 
+        info = self.active_files[file_id]
+        packets = info['packets']
+        outname = f"{file_id}_torrent.txt"
+
+        with open(outname, "w") as f:
+            for chunk in packets:
+                if chunk:
+                    f.write(chunk)
+
+        print(f"[Receiver] Saved file {outname} successfully.")
+        # Remove from active_files
+        del self.active_files[file_id]
 
     def set_timeout(self):
+        """
+        Optional method to signal that this receiver should time out.
+        """
         self.timeout = 1
         print("Timeout was changed")
+        
+    #
+    # ------------------ MAIN LISTENER ------------------
+    #
 
-
-    def execute_request(self, peer_addr, peer_msg, file_id,exch_data_queue):
-        payload = peer_msg.encode()
-        chksum = make_checksum(payload)
-        self.soc.sendto(chksum + payload, peer_addr)
-        self.run_receiver(exch_data_queue, file_id)
-        print(self.packets)
-        file_name = str(file_id) + "_torrent"
-        # add save to file
-
-
-    def listen_for_requests(self,exch_req_queue,exch_data_queue):
-        """Waits for request from other peers from self.soc, verifies data and verifies requests
+    def listen_for_requests(self,exch_req_queue):
+        """
+        Waits for request from other peers from self.soc, verifies data and verifies requests
         Runs as long as the p2p_command is running
         """
-        try:
-            while True:
-                #print('Listening')
+        while True:
+            try:
                 data, address = self.soc.recvfrom(4096)
+
+                # Separate checksum from payload
                 chksum = data[:8]
-                data = data[8:]
-                if verify_integrity(chksum, data):
-                    exch = data.decode(errors='ignore')
-                    if exch.startswith("EXCH_REQ"):
-                        string =  exch.split(":")[1]
-                        file_id, peer_addr = string.split(".")[0], string.split(".")[1]
-                        print("inserting EXCH_REQ with file id: ", str(file_id), " into queue")
-                        exch_req_queue.put((file_id, peer_addr))
-                    else:
-                        file_id, send_seq, msg = convert_sender_payload(data)
-                        print("inserting data into queue")
-                        exch_data_queue.put((data, address))
-                        self.soc.sendto(make_packet(send_seq, "ACK"), address)
-                else:
+                payload = data[8:]
+
+                if not verify_integrity(chksum, payload):
                     print("Corrupted packet, discarding")
-        except Exception as e:
-            print(e)
-            print("Getting no more messages, exiting listener")
-
-    def run_receiver(self, exch_data_queue, file_id):
-        """Waits for data from self.soc, verifies data and populates data in
-        self.packets using class methods.
-        Exits 15 seconds of no activity
-        after sender/client sends a sequence number of -1 is sent
-
-        """
-
-        try:
-            while True:
-                data, address = exch_data_queue.get(timeout=35)
-                send_id, send_seq, msg = convert_sender_payload(data)
-                #print("Server Received seq: " + str(send_seq))
-                #print("File id is " + send_id)
-                #print("The message is: " + msg)
-
-                if not file_id == send_id:
-                    exch_data_queue.put((data, address))
-                    time.sleep(1)
                     continue
 
-                if send_seq == -1:
-                    print("Client is done, sending ack")
-                    return
+                # See what kind of message this is
+                text_msg = payload.decode(errors='ignore')
 
-                if self.base_seq == -1:
-                    #print("Server Establishing base and max seq as " + str(send_seq))
-                    self.base_seq = send_seq
-                    self.max_seq = send_seq
-                    self.packets = [None]
+                if text_msg.startswith("EXCH_REQ"):
+                    # Example: "EXCH_REQ:001,127.0.0.1:9999"
+                    # We'll push it to the queue to let the 'sender logic' handle it
+                    # (i.e. we are the "server" side for that file).
+                    string = text_msg.split(":")[1]
+                    try:
+                        file_id, raw_ip = string.split(",", 1)
+                        ip, port = address  # actual sender's address from recvfrom()
+                        peer_addr = f"{ip}:{port}"
+                        print("[Receiver] Inserting EXCH_REQ with file id:", file_id, "and peer_addr:", peer_addr)
+                        exch_req_queue.put((file_id, peer_addr))
+                    except ValueError:
+                        print(f"[Error] Invalid EXCH_REQ format: {string}")
 
-                if send_seq < self.base_seq:
-                    #print("Server rebasing packets where base_seq: " + str(self.base_seq) + " to " + str(send_seq))
-                    self.rebase_packets(send_seq, msg)
-                elif send_seq >= self.max_seq:
-                    #print("Server expanding packets from max_seq: " + str(self.max_seq) + " to " + str(send_seq))
-                    self.add_packet(send_seq, msg, True)
-                elif send_seq < self.max_seq and self.packets[send_seq - self.base_seq] is None:
-                    self.add_packet(send_seq, msg, False)
+                elif text_msg.startswith("INDEX_REQ"):
+                    # Peer is asking for our local file index
+                    print("[Receiver] Received INDEX_REQ")
+                    file_index = "|".join(f"{fid}:{fname}" for fid, fname in self.peer_files.items())
+                    resp_pkt = make_data_packet(0, file_index, "index")  # from sender_rdt
+                    self.soc.sendto(resp_pkt, address)
+                    print("[Receiver] Sent index response")
 
-        except:
-            print("Getting no more messages, exiting receiver")
-        return
+                else:
+                    #
+                    # Otherwise, assume it's a chunk of file data from a sender.
+                    #
+                    file_id, send_seq, msg = convert_sender_payload(payload)
 
+                    # Send ACK immediately
+                    ack_pkt = make_packet(send_seq, "ACK")
+                    self.soc.sendto(ack_pkt, address)
 
+                    # If we haven't started tracking this file yet, init an entry
+                    if file_id not in self.active_files:
+                        self.active_files[file_id] = {
+                            'base_seq': -1,
+                            'max_seq': -1,
+                            'packets': []
+                        }
+
+                    # Shortcut reference
+                    info = self.active_files[file_id]
+
+                    # If this is the "FIN" marker
+                    if send_seq == -1:
+                        # Acknowledge the -1
+                        ack_pkt = make_packet(send_seq, "ACK")
+                        self.soc.sendto(ack_pkt, address)
+                        print(f"[Receiver] Received final chunk (-1) for file {file_id} -- writing to disk.")
+                        self.finalize_file(file_id)
+                        continue
+
+                    #
+                    # If first chunk for this file, set up base_seq / max_seq
+                    #
+                    if info['base_seq'] == -1:
+                        info['base_seq'] = send_seq
+                        info['max_seq'] = send_seq
+                        info['packets'] = [None]  # index 0
+
+                    if send_seq < info['base_seq']:
+                        # We rebase
+                        self.rebase_packets(file_id, send_seq, msg)
+                    elif send_seq >= info['max_seq']:
+                        # Expand
+                        self.add_packet(file_id, send_seq, msg, True)
+                    else:
+                        # It's in the existing range, fill if not present
+                        idx = send_seq - info['base_seq']
+                        if info['packets'][idx] is None:
+                            self.add_packet(file_id, send_seq, msg, False)
+
+            except Exception as e:
+                # print("[Receiver] Unexpected error:", e)
+                continue

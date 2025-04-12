@@ -1,12 +1,13 @@
 import os
+import socket
 import threading
 import time
 import zlib
 
 
-
 def make_checksum(data):
-    """Forms checksum from data using crc32 function from zlib library
+    """
+    Forms checksum from data using crc32 function from zlib library
 
     :param data: sequence of Bytes to calculate checksum
     :type data: Bytes
@@ -16,7 +17,8 @@ def make_checksum(data):
     return zlib.crc32(data).to_bytes(8,'big',signed=True)
 
 def make_sender_payload(seq_num, msg, file_id):
-    """Forms packet payload by encoding sequence number and message of packet
+    """
+    Forms packet payload by encoding sequence number and message of packet
 
     :param seq_num: int to convert to bytes
     :type seq_num: int
@@ -34,7 +36,8 @@ def make_sender_payload(seq_num, msg, file_id):
     return payload
 
 def convert_receiver_payload(data):
-    """Decodes packet payload to retrieve sequence number and message of packet
+    """
+    Decodes packet payload to retrieve sequence number and message of packet
 
     :param data: sequence of Bytes to decode
     :type data: Bytes
@@ -43,12 +46,30 @@ def convert_receiver_payload(data):
     :return: msg, data from packet
     :rtype: String
     """
-    send_seq = int.from_bytes(data[:4], byteorder='big', signed=True)
-    msg = data[4:].decode()
+    id_length = int.from_bytes(data[:4], byteorder='big', signed=True)
+    file_id = data[4:4+id_length].decode()
+    send_seq = int.from_bytes(data[4+id_length:8+id_length], byteorder='big', signed=True)
+    msg = data[8+id_length:].decode()
     return send_seq, msg
 
+def convert_ack_payload(data):
+    """
+    Parses a receiver ACK payload (just a sequence number + "ACK")
+
+    :param data: sequence of bytes
+    :return: seq_num, message
+    """
+    seq_num = int.from_bytes(data[:4], byteorder='big', signed=True)
+    try:
+        msg = data[4:].decode()
+    except UnicodeDecodeError:
+        print(f"[Error] Failed to decode ACK payload: {data[4:]}")
+        msg = "<INVALID>"
+    return seq_num, msg
+
 def verify_integrity(sent_chksum, data):
-    """Verifies checksum from received packet
+    """
+    Verifies checksum from received packet
 
     :param sent_chksum: received checksum with length of 8 bytes
     :type sent_chksum: Bytes
@@ -61,7 +82,8 @@ def verify_integrity(sent_chksum, data):
     return sent_chksum == chksum
 
 def make_packet(seq_num, msg, file_id):
-    """Forms packet by combining calculated checksum and formed payload
+    """
+    Forms packet by combining calculated checksum and formed payload
 
     :param seq_num: int to convert to bytes
     :type seq_num: int
@@ -75,7 +97,8 @@ def make_packet(seq_num, msg, file_id):
     return chksum+payload
 
 class Sender:
-    """Sender, a class with defined behavior to send data to a receiver
+    """
+    Sender, a class with defined behavior to send data to a receiver
 
     Attributes:
         packets: Array of 3 object arrays containing:
@@ -93,20 +116,31 @@ class Sender:
         self.port = port
         self.base_seq = 1
         self.file_id = file_id
+        self.packets = []  # Each entry: [packet_bytes, acked (bool), timer]
 
     def send_pkt(self, seq_num):
-        """Retransmits packet after timeout by thread.Timer and resets timeout
+        """
+        Retransmits packet after timeout by thread.Timer and resets timeout
 
         :param seq_num: sequence number to retransmit
         :type seq_num: int
         """
-        print("Retransmitting " + str(seq_num) + " to " + str(self.ip) + " : "+ str(self.port))
-        self.soc.sendto(self.packets[seq_num - self.base_seq][0], (self.ip, self.port))
-        self.packets[seq_num- self.base_seq][2] = threading.Timer(5.0, self.send_pkt, [seq_num])
-        self.packets[seq_num- self.base_seq][2].start()
+        idx = seq_num - self.base_seq
+        if idx < 0 or idx >= len(self.packets):
+            return
+
+        print(f"[Sender] Retransmitting {seq_num} to {self.ip}:{self.port}")
+        pkt, acked, _ = self.packets[idx]
+        self.soc.sendto(pkt, (self.ip, self.port))
+
+        # Restart retransmission timer
+        timer = threading.Timer(5.0, self.send_pkt, [seq_num])
+        self.packets[idx][2] = timer
+        timer.start()
 
     def arrange_pkts(self, data):
-        """Given chunks of data, populate each entry of Sender packets with
+        """
+        Given chunks of data, populate each entry of Sender packets with
         packet, False (for acknowledgement), thread.Timer for timeout and retransmit
 
         :param data: array of chunks of data
@@ -115,32 +149,28 @@ class Sender:
         self.packets = []
         seq_num = self.base_seq
         for pkt in data:
-            #print(pkt)
             packet = make_packet(seq_num, pkt, self.file_id)
-            self.packets.append([packet, False,
-                                 threading.Timer(5.0, self.send_pkt, [seq_num])])
+            self.packets.append([packet, False, None])  # No timer yet
             seq_num += 1
 
 
     def find_recv_base_window(self, window_size):
-        """Given window size and Sender packets,
+        """
+        Given window size and Sender packets,
         find the closest unacknowledged packet and calculate the window
 
         :param window_size: size of window
         :type window_size: int
         """
         for i in range(len(self.packets)):
-            if not self.packets[i][1]:
-                if i + window_size >= len(self.packets):
-                    #print("returning: " + str(i) + " and " + str(len(self.packets)-1))
-                    return i, len(self.packets)-1
-                else:
-                    #print("returning: " + str(i) + " and " + str(i + window_size))
-                    return i, i + window_size
+            if not self.packets[i][1]:  # Not ACKed
+                end = min(i + window_size - 1, len(self.packets) - 1)
+                return i, end
         return None, None
 
     def make_packets(self, exch_path, chunk_size):
-        """Forms packets from file by splitting file into chunks
+        """
+        Forms packets from file by splitting file into chunks
 
         :param file_name: String containing name of file to send
         :type file_name: String
@@ -157,61 +187,84 @@ class Sender:
         return pkts
 
     def setup_exchange(self, exch_path):
-        print("Exchanging: " + exch_path)
+        print(f"[Sender] Starting file exchange for {exch_path}")
         self.arrange_pkts(self.make_packets(exch_path, 24))
         # Add process to run sender to distinguish request number
         self.run_sender()
 
 
     def run_sender(self):
-        """This function assumes Sender packets to be populated,
-        through arrange_packets. Sends packets in a Selective Repeat fashion
-
         """
-        win_size = int(len(self.packets) / 4)
-        recv_base, win_end = self.find_recv_base_window(win_size)
-        while recv_base is not None:
-            for i in range(recv_base, win_end+1):
-                if not (self.packets[i][2].finished.is_set() or self.packets[i][2].is_alive()):
-                    #print("Transmitting " + str(self.base_seq + i))
-                    payload = self.packets[i][0]
-                    self.soc.sendto(payload, (self.ip, self.port))
-                    self.packets[i][2].start()
+        Sends packets using Selective Repeat. Only creates timers once per packet.
+        """
+        win_size = max(1, len(self.packets) // 4)
+        sent = set()
+
+        while True:
+            recv_base, win_end = self.find_recv_base_window(win_size)
+            if recv_base is None:
+                break  # All packets acknowledged
+
+            for i in range(recv_base, win_end + 1):
+                if not self.packets[i][1] and i not in sent:
+                    pkt = self.packets[i][0]
+                    self.soc.sendto(pkt, (self.ip, self.port))
+
+                    # Set and start retransmission timer
+                    timer = threading.Timer(5.0, self.send_pkt, [self.base_seq + i])
+                    self.packets[i][2] = timer
+                    timer.start()
+                    sent.add(i)
                     time.sleep(0.2)
 
+            # Listen for ACKs
             self.soc.settimeout(1)
             try:
                 while True:
-                    data, address = self.soc.recvfrom(4096)
-                    chksum = data[:8]
-                    data = data[8:]
-                    if verify_integrity(chksum, data):
-                        recv_seq, ack = convert_receiver_payload(data)
-                        print('Client confirming packet ' + str(recv_seq))
-                        if not self.packets[recv_seq - self.base_seq][1]:
-                            self.packets[recv_seq - self.base_seq][1] = True
-                        self.packets[recv_seq - self.base_seq][2].cancel()
-                        #self.packets[recv_seq - self.base_seq][2].join()
-            except:
+                    data, _ = self.soc.recvfrom(4096)
+                    chksum, payload = data[:8], data[8:]
+                    
+                    if verify_integrity(chksum, payload):
+                        recv_seq, ack = convert_ack_payload(payload)
+                        if ack.strip() != "ACK":
+                            print(f"[Sender] Ignored non-ACK message: {ack}")
+                            continue
+
+                        print(f"[Sender] Received ACK for packet {recv_seq}")
+                        idx = recv_seq - self.base_seq
+                        if 0 <= idx < len(self.packets):
+                            self.packets[idx][1] = True  # Mark packet as acked
+                            # Cancel the timer if it's still running
+                            timer = self.packets[idx][2]
+                            if timer and timer.is_alive():
+                                timer.cancel()
+            except socket.timeout:
+                # Instead of continue, we break out of the "while True" loop
+                pass
+            finally:
                 self.soc.settimeout(None)
-                recv_base, win_end = self.find_recv_base_window(win_size)
-                continue
 
-        while True:
-            payload = make_packet(-1,'FIN', self.file_id)
-            self.soc.sendto(payload, (self.ip, self.port))
-            self.soc.settimeout(10)
+        # Send FIN and wait for ACK
+        max_retries = 5
+        retries = 0
+        while retries < max_retries:
+            fin_pkt = make_packet(-1, 'FIN', self.file_id)
+            self.soc.sendto(fin_pkt, (self.ip, self.port))
+            print("[Sender] Sent FIN, waiting for final ACK...")
             try:
-                data, address = self.soc.recvfrom(4096)
-                chksum = data[:8]
-                data = data[8:]
-                if verify_integrity(chksum, data):
-                    recv_seq, ack = convert_receiver_payload(data)
-                    if recv_seq == -1:
+                self.soc.settimeout(10)
+                data, _ = self.soc.recvfrom(4096)
+                chksum, payload = data[:8], data[8:]
+                
+                if verify_integrity(chksum, payload):
+                    recv_seq, ack = convert_ack_payload(payload)
+                    if ack.strip() == "ACK" and recv_seq == -1:
+                        print("[Sender] Received final ACK. Transfer complete.")
                         break
-            except:
-                continue
+            except socket.timeout:
+                print(f"[Sender] FIN retry timed out ({retries+1}/{max_retries})")
+                retries += 1
+            finally:
+                self.soc.settimeout(None)
 
-
-        print("ACKed end of data, now exiting")
-        return
+        print("[Sender] Exiting FIN handshake sequence.")

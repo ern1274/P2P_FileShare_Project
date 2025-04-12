@@ -57,27 +57,34 @@ Example:
 ------------------------------------
 
 ```bash
-c 127.0.0.1:10001 2
+> i -127.0.0.1:10000
+> c -127.0.0.1:10000 -001
 ```
 <br>
 
 ------------------------------------
 FILES AND STRUCTURE
 ------------------------------------
-`main.py`
+`p2p_command.py`
 Unified script for running both the tracker and the peer interface.
+
+`receiver_rdt.py`
+Handles peer requests when a peer receives a request.
+
+`sender_rdt.py`
+Handles peer requests by sending out requests.
 
 `README.md`
 You're reading it!
 
 `requirements.txt`
-Will list dependencies (currently none for core features).
+Will list dependencies.
 
 `revisions.txt`
 Contains git log history (to be generated using git log > revisions.txt).
 
 `report.pdf`
-Your project report with system overview, design, and authorship.
+Project report with system overview, design, and authorship.
 <br>
 <br>
 
