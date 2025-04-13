@@ -201,6 +201,7 @@ class Sender:
         sent = set()
 
         while True:
+            #print("Still alive")
             recv_base, win_end = self.find_recv_base_window(win_size)
             if recv_base is None:
                 break  # All packets acknowledged
@@ -218,7 +219,7 @@ class Sender:
                     time.sleep(0.2)
 
             # Listen for ACKs
-            self.soc.settimeout(1)
+            self.soc.settimeout(4)
             try:
                 while True:
                     data, _ = self.soc.recvfrom(4096)

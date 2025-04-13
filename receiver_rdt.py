@@ -1,7 +1,7 @@
 import threading
 import time
 import zlib
-from sender_rdt import make_packet as make_data_packet
+from sender_rdt import make_packet as make_data_packet, convert_ack_payload
 
 
 def make_checksum(data):
@@ -42,7 +42,7 @@ def convert_sender_payload(data):
     :return: msg, data from packet
     :rtype: String
     """
-    id_length = int.from_bytes(data[:4], byteorder='big', signed=True)
+    id_length = int.from_bytes(data[:4], byteorder='big')
     file_id = data[4:4+id_length].decode()
     send_seq = int.from_bytes(data[4+id_length:8+id_length], byteorder='big', signed=True)
     msg = data[8+id_length:].decode()
@@ -263,9 +263,13 @@ class Receiver:
                     #
                     # Otherwise, assume it's a chunk of file data from a sender.
                     #
-                    file_id, send_seq, msg = convert_sender_payload(payload)
+                    recv_seq, ack = convert_ack_payload(payload)
+                    if ack == "ACK":
+                        continue
 
+                    file_id, send_seq, msg = convert_sender_payload(payload)
                     # Send ACK immediately
+                    #print('sequence number ' + str(send_seq) + " : " + str(msg))
                     ack_pkt = make_packet(send_seq, "ACK")
                     self.soc.sendto(ack_pkt, address)
 
@@ -283,8 +287,9 @@ class Receiver:
                     # If this is the "FIN" marker
                     if send_seq == -1:
                         # Acknowledge the -1
-                        ack_pkt = make_packet(send_seq, "ACK")
-                        self.soc.sendto(ack_pkt, address)
+                        # is already acknowledged a few lines above for all packets
+                        #ack_pkt = make_packet(send_seq, "ACK")
+                        #self.soc.sendto(ack_pkt, address)
                         print(f"[Receiver] Received final chunk (-1) for file {file_id} -- writing to disk.")
                         self.finalize_file(file_id)
                         continue
@@ -310,5 +315,5 @@ class Receiver:
                             self.add_packet(file_id, send_seq, msg, False)
 
             except Exception as e:
-                # print("[Receiver] Unexpected error:", e)
+                #print("[Receiver] Unexpected error:", e)
                 continue
