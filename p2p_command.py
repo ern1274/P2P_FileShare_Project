@@ -214,7 +214,8 @@ def process_exchange_requests(exch_req_queue, address, soc):
             try:
                 peer_ip, peer_port_str = raw_peer_addr.split(":")
                 exch_path = get_index_path(file_id)
-                sender = Sender(soc, peer_ip, int(peer_port_str), file_id)
+                send_soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sender = Sender(send_soc, peer_ip, int(peer_port_str), file_id)
                 sender_thread = Thread(target=sender.setup_exchange, args=[exch_path])
                 sender_thread.start()
             except ValueError:
@@ -251,47 +252,37 @@ def p2p_command_line(name, port):
     peers = peer_discovery(port, name)
 
     while True:
-        if not exch_req_queue.empty():
-            print("Fulfilling Exchange Request")
-            while not exch_req_queue.empty():
-                entry = exch_req_queue.get()
-                exch_id, exch_peer = entry[0], entry[1]
-                #exch_addr = peers[exch_peer]
-                exch_path = get_index_path(exch_id)
-                peer_ip, peer_port = exch_peer.split(":")
-                sender = Sender(soc, peer_ip, int(peer_port), exch_id)
-                sender_thread = Thread(target=sender.setup_exchange, args=[exch_path])
-                sender_thread.start()
-        else:
-            print('\nCurrent Peers:')
-            for peer in peers.keys():
-                print(f" - {peer}")
-            print_menu()
+        print('\nCurrent Peers:')
+        for peer in peers.keys():
+            print(f" - {peer}")
+        print_menu()
 
-            # User input
-            ans = input('\nChoose: ').strip().split(' ')
-            if not ans:
-                continue
+        # User input
+        ans = input('\nChoose: ').strip().split(' ')
+        if not ans:
+            continue
 
-            command = ans[0]
+        command = ans[0]
 
-            if command == 'i' and len(ans) == 2:
-                peer = ans[1]
-                if peer in peers:
-                    print_index(peers[peer], soc)
-                else:
-                    print("[Error] Unknown peer.")
-            elif command == 'c' and len(ans) == 3:
-                peer, file_id = ans[1], ans[2]
-                exchange_data(peers, peer, file_id, receiver, address)
-            elif command == 'r':
-                peers = peer_discovery(port, name)
-            elif command == 'q':
-                print('Leaving system. Goodbye!')
-                receiver.set_timeout()
-                break
+        if command == 'i' and len(ans) == 2:
+            peer = ans[1]
+            if peer in peers:
+                print_index(peers[peer], soc)
             else:
-                print('[Error] Invalid command. Please try again.')
+                print("[Error] Unknown peer.")
+        elif command == 'c' and len(ans) == 3:
+            peer, file_id = ans[1], ans[2]
+            exchange_data(peers, peer, file_id, receiver, address)
+        elif command == 'r':
+            peers = peer_discovery(port, name)
+        elif command == 'q':
+            print('Leaving system. Goodbye!')
+            receiver.set_timeout()
+            break
+        else:
+            print('[Error] Invalid command. Please try again.')
+
+
 
 # -----------------------------
 # Entry point

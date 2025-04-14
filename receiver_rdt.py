@@ -210,7 +210,7 @@ class Receiver:
         """
         Optional method to signal that this receiver should time out.
         """
-        self.timeout = 1
+        self.soc.settimeout(1)
         print("Timeout was changed")
         
     #
@@ -263,10 +263,6 @@ class Receiver:
                     #
                     # Otherwise, assume it's a chunk of file data from a sender.
                     #
-                    recv_seq, ack = convert_ack_payload(payload)
-                    if ack == "ACK":
-                        continue
-
                     file_id, send_seq, msg = convert_sender_payload(payload)
                     # Send ACK immediately
                     #print('sequence number ' + str(send_seq) + " : " + str(msg))
@@ -286,10 +282,6 @@ class Receiver:
 
                     # If this is the "FIN" marker
                     if send_seq == -1:
-                        # Acknowledge the -1
-                        # is already acknowledged a few lines above for all packets
-                        #ack_pkt = make_packet(send_seq, "ACK")
-                        #self.soc.sendto(ack_pkt, address)
                         print(f"[Receiver] Received final chunk (-1) for file {file_id} -- writing to disk.")
                         self.finalize_file(file_id)
                         continue
@@ -315,5 +307,7 @@ class Receiver:
                             self.add_packet(file_id, send_seq, msg, False)
 
             except Exception as e:
-                #print("[Receiver] Unexpected error:", e)
-                continue
+                print("[Receiver] Unexpected error:", e)
+                #continue
+                break
+
