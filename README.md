@@ -8,13 +8,16 @@ P2P FILE SHARING SYSTEM
 
 PROJECT OVERVIEW
 ------------------------------------
-This project implements a basic Peer-to-Peer (P2P) file sharing system in Python. It allows multiple users (peers) to register with a central tracker and discover each other in order to exchange files directly, without a centralized server.
+This project implements a basic Peer-to-Peer (P2P) file sharing system in Python. 
+It allows multiple users (peers) to register with a central tracker and 
+discover each other in order to exchange files directly, without a centralized server.
 
 It mimics basic BitTorrent-like functionality with:
 - Peer discovery via a tracker server
 - Command-line interface
 - Threaded architecture (extendable)
 - Foundation for file indexing and chunked file transfers
+- Support for multiple consecutive file transfers  
 
 ------------------------------------
 HOW TO RUN
@@ -27,6 +30,8 @@ python p2p_command.py --tracker
 ```bash 
 python p2p_command.py
 ```
+
+3. Commence file transfers using the command-line interface.
 
 ------------------------------------
 COMMAND-LINE USAGE
@@ -53,13 +58,14 @@ Quit the program.
 <br>
 
 ------------------------------------
-Example:
+Example Session:
 ------------------------------------
 
 ```bash
-> i -127.0.0.1:10000
-> c -127.0.0.1:10000 -001
+> i Alice
+> c Alice 001
 ```
+This will attempt to download the file at file index 001 from peer "Alice".
 <br>
 
 ------------------------------------
@@ -69,10 +75,13 @@ FILES AND STRUCTURE
 Unified script for running both the tracker and the peer interface.
 
 `receiver_rdt.py`
-Handles peer requests when a peer receives a request.
+Handles inbound requests. Implements a multi-file approach so multiple inbound 
+file transfers can occur. Automatically saves each completed file 
+(e.g. 001_torrent.txt).
 
 `sender_rdt.py`
-Handles peer requests by sending out requests.
+Handles outbound file requests. Splits files into chunks, sends them with basic 
+reliability and “Selective Repeat” logic, and completes with a FIN handshake.
 
 `README.md`
 You're reading it!
@@ -91,4 +100,5 @@ Project report with system overview, design, and authorship.
 ------------------------------------
 DEPENDENCIES
 ------------------------------------
-`Python 3.7` or newer. No external libraries are required for basic functionality.
+`Python 3.7` or newer. No extra libraries required for basic functionality; 
+just standard Python modules like socket, threading, queue, etc.
