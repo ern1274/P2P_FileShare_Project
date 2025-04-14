@@ -1,4 +1,5 @@
 import argparse
+from os import _exit
 import os.path
 import socket
 import threading
@@ -278,7 +279,7 @@ def p2p_command_line(name, port):
         elif command == 'q':
             print('Leaving system. Goodbye!')
             receiver.set_timeout()
-            break
+            _exit(1)
         else:
             print('[Error] Invalid command. Please try again.')
 

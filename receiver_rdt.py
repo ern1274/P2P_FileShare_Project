@@ -211,7 +211,6 @@ class Receiver:
         Optional method to signal that this receiver should time out.
         """
         self.soc.settimeout(1)
-        print("Timeout was changed")
         
     #
     # ------------------ MAIN LISTENER ------------------
