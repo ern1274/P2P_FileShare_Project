@@ -1,0 +1,103 @@
+\begin{sphinxtheindex}
+\let\bigletter\sphinxstyleindexlettergroup
+\let\spxpagem \sphinxstyleindexpagemain
+\let\spxentry \sphinxstyleindexentry
+\let\spxextra \sphinxstyleindexextra
+
+  \bigletter A
+  \item \spxentry{add\_packet()}\spxextra{receiver\_rdt.Receiver method}, \hyperpage{3}
+  \item \spxentry{arrange\_pkts()}\spxextra{sender\_rdt.Sender method}, \hyperpage{5}
+
+  \indexspace
+  \bigletter B
+  \item \spxentry{base\_seq}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{3}
+  \item \spxentry{base\_seq}\spxextra{sender\_rdt.Sender attribute}, \hyperpage{5}
+
+  \indexspace
+  \bigletter C
+  \item \spxentry{convert\_ack\_payload()}\spxextra{in module sender\_rdt}, \hyperpage{6}
+  \item \spxentry{convert\_receiver\_payload()}\spxextra{in module sender\_rdt}, \hyperpage{6}
+  \item \spxentry{convert\_sender\_payload()}\spxextra{in module receiver\_rdt}, \hyperpage{4}
+
+  \indexspace
+  \bigletter E
+  \item \spxentry{exchange\_data()}\spxextra{in module p2p\_command}, \hyperpage{2}
+
+  \indexspace
+  \bigletter F
+  \item \spxentry{finalize\_file()}\spxextra{receiver\_rdt.Receiver method}, \hyperpage{3}
+  \item \spxentry{find\_recv\_base\_window()}\spxextra{sender\_rdt.Sender method}, \hyperpage{6}
+
+  \indexspace
+  \bigletter G
+  \item \spxentry{get\_index\_path()}\spxextra{in module p2p\_command}, \hyperpage{2}
+
+  \indexspace
+  \bigletter I
+  \item \spxentry{ip}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{3}
+  \item \spxentry{ip}\spxextra{sender\_rdt.Sender attribute}, \hyperpage{5}
+
+  \indexspace
+  \bigletter L
+  \item \spxentry{listen\_for\_requests()}\spxextra{receiver\_rdt.Receiver method}, \hyperpage{3}
+
+  \indexspace
+  \bigletter M
+  \item \spxentry{make\_checksum()}\spxextra{in module receiver\_rdt}, \hyperpage{4}
+  \item \spxentry{make\_checksum()}\spxextra{in module sender\_rdt}, \hyperpage{7}
+  \item \spxentry{make\_packet()}\spxextra{in module receiver\_rdt}, \hyperpage{4}
+  \item \spxentry{make\_packet()}\spxextra{in module sender\_rdt}, \hyperpage{7}
+  \item \spxentry{make\_packets()}\spxextra{sender\_rdt.Sender method}, \hyperpage{6}
+  \item \spxentry{make\_receiver\_payload()}\spxextra{in module receiver\_rdt}, \hyperpage{5}
+  \item \spxentry{make\_sender\_payload()}\spxextra{in module sender\_rdt}, \hyperpage{7}
+  \item \spxentry{max\_seq}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{3, 4}
+  \item \spxentry{module}
+    \subitem \spxentry{p2p\_command}, \hyperpage{2}
+    \subitem \spxentry{receiver\_rdt}, \hyperpage{3}
+    \subitem \spxentry{sender\_rdt}, \hyperpage{5}
+
+  \indexspace
+  \bigletter P
+  \item \spxentry{p2p\_command}
+    \subitem \spxentry{module}, \hyperpage{2}
+  \item \spxentry{p2p\_command\_line()}\spxextra{in module p2p\_command}, \hyperpage{2}
+  \item \spxentry{packets}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{3, 4}
+  \item \spxentry{packets}\spxextra{sender\_rdt.Sender attribute}, \hyperpage{5, 6}
+  \item \spxentry{peer\_discovery()}\spxextra{in module p2p\_command}, \hyperpage{2}
+  \item \spxentry{port}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{3}
+  \item \spxentry{port}\spxextra{sender\_rdt.Sender attribute}, \hyperpage{5}
+  \item \spxentry{print\_index()}\spxextra{in module p2p\_command}, \hyperpage{2}
+  \item \spxentry{print\_menu()}\spxextra{in module p2p\_command}, \hyperpage{2}
+  \item \spxentry{process\_exchange\_requests()}\spxextra{in module p2p\_command}, \hyperpage{2}
+
+  \indexspace
+  \bigletter R
+  \item \spxentry{rebase\_packets()}\spxextra{receiver\_rdt.Receiver method}, \hyperpage{4}
+  \item \spxentry{Receiver}\spxextra{class in receiver\_rdt}, \hyperpage{3}
+  \item \spxentry{receiver\_rdt}
+    \subitem \spxentry{module}, \hyperpage{3}
+  \item \spxentry{register\_with\_tracker()}\spxextra{in module p2p\_command}, \hyperpage{2}
+  \item \spxentry{run\_sender()}\spxextra{sender\_rdt.Sender method}, \hyperpage{6}
+
+  \indexspace
+  \bigletter S
+  \item \spxentry{send\_pkt()}\spxextra{sender\_rdt.Sender method}, \hyperpage{6}
+  \item \spxentry{Sender}\spxextra{class in sender\_rdt}, \hyperpage{5}
+  \item \spxentry{sender\_rdt}
+    \subitem \spxentry{module}, \hyperpage{5}
+  \item \spxentry{set\_timeout()}\spxextra{receiver\_rdt.Receiver method}, \hyperpage{4}
+  \item \spxentry{setup\_exchange()}\spxextra{sender\_rdt.Sender method}, \hyperpage{6}
+  \item \spxentry{soc}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{3}
+  \item \spxentry{soc}\spxextra{sender\_rdt.Sender attribute}, \hyperpage{5}
+  \item \spxentry{start\_tracker()}\spxextra{in module p2p\_command}, \hyperpage{2}
+
+  \indexspace
+  \bigletter T
+  \item \spxentry{timeout}\spxextra{receiver\_rdt.Receiver attribute}, \hyperpage{4}
+
+  \indexspace
+  \bigletter V
+  \item \spxentry{verify\_integrity()}\spxextra{in module receiver\_rdt}, \hyperpage{5}
+  \item \spxentry{verify\_integrity()}\spxextra{in module sender\_rdt}, \hyperpage{7}
+
+\end{sphinxtheindex}
